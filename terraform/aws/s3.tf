@@ -20,6 +20,21 @@ resource "aws_s3_bucket" "data" {
   })
 }
 
+
+resource "aws_s3_bucket" "data_log_bucket" {
+  bucket = "data-log-bucket"
+}
+
+resource "aws_s3_bucket_logging" "data" {
+  bucket = aws_s3_bucket.data.id
+
+  target_bucket = aws_s3_bucket.data_log_bucket.id
+  target_prefix = "log/"
+}
+
+
+
+
 resource "aws_s3_bucket_object" "data_object" {
   bucket = aws_s3_bucket.data.id
   key    = "customer-master.xlsx"
@@ -40,6 +55,7 @@ resource "aws_s3_bucket_object" "data_object" {
 }
 
 resource "aws_s3_bucket" "financials" {
+	# checkov:skip=CKV_AWS_18: ADD REASON
   # bucket is not encrypted
   # bucket does not have access logs
   # bucket does not have versioning
@@ -109,6 +125,57 @@ resource "aws_s3_bucket" "data_science" {
     yor_trace            = "9a7c8788-5655-4708-bbc3-64ead9847f64"
   }
 }
+
+
+resource "aws_s3_bucket_versioning" "data_science" {
+  bucket = aws_s3_bucket.data_science.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket" "destination" {
+  bucket = aws_s3_bucket.data_science.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_iam_role" "replication" {
+  name = "aws-iam-role"
+  assume_role_policy = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "s3.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+POLICY
+}
+
+resource "aws_s3_bucket_replication_configuration" "data_science" {
+  depends_on = [aws_s3_bucket_versioning.data_science]
+  role   = aws_iam_role.data_science.arn
+  bucket = aws_s3_bucket.data_science.id
+  rule {
+    id = "foobar"
+    status = "Enabled"
+    destination {
+      bucket        = aws_s3_bucket.destination.arn
+      storage_class = "STANDARD"
+    }
+  }
+}
+
+
+
 
 resource "aws_s3_bucket" "logs" {
   bucket = "${local.resource_prefix.value}-logs"
